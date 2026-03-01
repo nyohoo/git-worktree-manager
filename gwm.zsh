@@ -1458,6 +1458,10 @@ zpull() {
     return 1
   fi
 
+  # 古い worktree 情報をクリーンアップ
+  _worktree_info "Worktree 情報をクリーンアップ中..."
+  git -C "$repo_main" worktree prune -v 2>&1 | grep -v "^$" || true
+
   # タスクディレクトリを作成
   mkdir -p "$task_dir"
 
@@ -1472,10 +1476,41 @@ zpull() {
   if git -C "$repo_main" rev-parse --verify "$local_branch_name" >/dev/null 2>&1; then
     # 既存のローカルブランチを使用
     _worktree_info "既存のローカルブランチ '$local_branch_name' を使用します"
-    if ! git -C "$repo_main" worktree add "$repo_worktree" "$local_branch_name" 2>&1; then
-      _worktree_error "Worktree の作成に失敗しました"
-      rm -rf "$task_dir"
-      return 1
+
+    # worktree 作成を試行
+    local worktree_error
+    worktree_error=$(git -C "$repo_main" worktree add "$repo_worktree" "$local_branch_name" 2>&1)
+
+    if [[ $? -ne 0 ]]; then
+      # 失敗した場合、エラー内容を確認
+      if echo "$worktree_error" | grep -q "already registered"; then
+        _worktree_error "Worktree が既に登録されていますが、ディレクトリが見つかりません"
+        echo ""
+        echo "以下のコマンドで修復を試みます:"
+        echo "  git worktree prune"
+        echo ""
+
+        # prune してリトライ
+        git -C "$repo_main" worktree prune -v 2>&1
+
+        _worktree_info "リトライ中..."
+        if ! git -C "$repo_main" worktree add "$repo_worktree" "$local_branch_name" 2>&1; then
+          _worktree_error "リトライも失敗しました"
+          echo ""
+          echo "手動で修復する必要があります:"
+          echo "  cd $repo_main"
+          echo "  git worktree list"
+          echo "  git worktree remove <path>  # 不要な worktree を削除"
+          echo "  git worktree prune"
+          rm -rf "$task_dir"
+          return 1
+        fi
+      else
+        _worktree_error "Worktree の作成に失敗しました"
+        echo "$worktree_error"
+        rm -rf "$task_dir"
+        return 1
+      fi
     fi
   else
     # 新しいローカルブランチを作成してリモートを追跡
