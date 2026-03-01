@@ -582,17 +582,70 @@ zclean() {
   fi
 
   # 各リポジトリのworktreeを削除
+  local failed_repos=()
   for repo in "${REPOS[@]}"; do
     local repo_main="${GWT_REPOS_ROOT}/${repo}"
     local repo_worktree="${task_dir}/${repo}"
 
     if [[ -d "$repo_worktree" ]]; then
       _worktree_info "$repo の worktree を削除中..."
-      git -C "$repo_main" worktree remove "$repo_worktree" 2>&1 || {
-        _worktree_error "$repo の worktree 削除に失敗しました (手動削除: git worktree remove $repo_worktree)"
-      }
+
+      # worktree remove を試行
+      local remove_error
+      remove_error=$(git -C "$repo_main" worktree remove "$repo_worktree" 2>&1)
+
+      if [[ $? -ne 0 ]]; then
+        # 失敗した場合、変更があるかチェック
+        if echo "$remove_error" | grep -q "contains modified or untracked files"; then
+          echo ""
+          echo "⚠️  $repo に未保存の変更があります:"
+          echo "   - 変更を保存してから削除する場合: 手動でコミット"
+          echo "   - 変更を破棄する場合: --force オプションを使用"
+          echo ""
+          read -q "force_reply?🔥 変更を破棄して強制削除しますか？ (y/n) "
+          echo ""
+
+          if [[ "$force_reply" =~ ^[Yy]$ ]]; then
+            _worktree_info "$repo の worktree を強制削除中..."
+            if git -C "$repo_main" worktree remove --force "$repo_worktree" 2>&1; then
+              echo "✅ $repo の worktree を削除しました"
+            else
+              _worktree_error "$repo の worktree 削除に失敗しました"
+              failed_repos+=("$repo")
+            fi
+          else
+            echo "⏭️  $repo の worktree 削除をスキップしました"
+            failed_repos+=("$repo")
+          fi
+        else
+          _worktree_error "$repo の worktree 削除に失敗しました"
+          echo "$remove_error"
+          failed_repos+=("$repo")
+        fi
+      else
+        echo "✅ $repo の worktree を削除しました"
+      fi
     fi
   done
+
+  # 失敗したリポジトリがある場合
+  if [[ ${#failed_repos[@]} -gt 0 ]]; then
+    echo ""
+    _worktree_error "一部の worktree を削除できませんでした: ${failed_repos[*]}"
+    echo ""
+    echo "手動で削除する方法:"
+    for repo in "${failed_repos[@]}"; do
+      echo "  git -C $GWT_REPOS_ROOT/$repo worktree remove --force $task_dir/$repo"
+    done
+    echo ""
+    read -q "continue_reply?タスクディレクトリを削除して続行しますか？ (y/n) "
+    echo ""
+
+    if [[ ! "$continue_reply" =~ ^[Yy]$ ]]; then
+      echo "キャンセルしました。"
+      return 1
+    fi
+  fi
 
   # タスクディレクトリを削除
   rm -rf "$task_dir"
@@ -641,9 +694,33 @@ zclean() {
 
       if git -C "$repo_main" rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
         _worktree_info "$repo でブランチ '$BRANCH_NAME' を削除中..."
-        git -C "$repo_main" branch -D "$BRANCH_NAME" 2>&1 || {
-          echo "⚠️  $repo でブランチを削除できませんでした"
-        }
+
+        # ブランチ削除を試行
+        local branch_error
+        branch_error=$(git -C "$repo_main" branch -D "$BRANCH_NAME" 2>&1)
+
+        if [[ $? -ne 0 ]]; then
+          # worktree に使用されている場合
+          if echo "$branch_error" | grep -q "used by worktree"; then
+            echo "⚠️  $repo: ブランチが worktree に使用されています"
+            echo "   worktree 情報をクリーンアップ中..."
+
+            # prune を実行してリトライ
+            git -C "$repo_main" worktree prune -v 2>&1
+
+            if git -C "$repo_main" branch -D "$BRANCH_NAME" 2>&1; then
+              echo "✅ $repo: ブランチを削除しました"
+            else
+              echo "⚠️  $repo: ブランチを削除できませんでした"
+              echo "   手動で削除: git -C $repo_main worktree prune && git -C $repo_main branch -D $BRANCH_NAME"
+            fi
+          else
+            echo "⚠️  $repo でブランチを削除できませんでした"
+            echo "$branch_error"
+          fi
+        else
+          echo "✅ $repo: ブランチを削除しました"
+        fi
       fi
     done
     echo ""

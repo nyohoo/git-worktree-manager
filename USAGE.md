@@ -202,6 +202,28 @@ zclean feature-api
 3. タスクディレクトリを削除
 4. （オプション）ブランチも削除
 
+**安全機能:**
+- **未保存の変更を検出**: worktree に変更がある場合は警告を表示
+- **強制削除の確認**: 変更を破棄する場合は明示的に確認
+- **自動修復**: worktree 削除に失敗した場合は `git worktree prune` を自動実行
+- **マージ状態の確認**: ブランチが未マージの場合は警告を表示
+
+**トラブルシューティング:**
+
+worktree 削除に失敗した場合:
+```bash
+# 手動で修復
+git worktree prune
+git worktree remove --force /path/to/worktree
+```
+
+ブランチ削除に失敗した場合:
+```bash
+# worktree 情報をクリーンアップしてからブランチ削除
+git worktree prune
+git branch -D <branch-name>
+```
+
 ### `ztasks` - タスク一覧
 
 現在アクティブなタスクを fzf で一覧表示・選択します。
