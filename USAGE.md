@@ -211,10 +211,17 @@ ztasks
 ```
 
 **操作:**
-- `Enter`: タスクディレクトリに移動
+- `Enter`: タスクディレクトリに移動（複数リポジトリの場合は選択）
 - `1`: 動作確認（`ztest` 実行）
 - `2`: タスク削除（`zclean` 実行）
 - `3`: Cursor で開く（`zcursor` 実行）
+
+**リポジトリ選択:**
+- 複数リポジトリがあるタスクの場合、Enter で移動する際にリポジトリ選択画面が表示されます
+- 例: `redirect_OrganizationInconsistentError` に rsv-rails と rsv-frontend がある場合
+  1. ztasks で Enter
+  2. fzf でリポジトリを選択（rsv-rails または rsv-frontend）
+  3. 選択したリポジトリのディレクトリに移動
 
 ### `zcursor` - Cursor で開く
 

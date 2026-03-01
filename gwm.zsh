@@ -750,8 +750,47 @@ ztasks() {
       *)
         # Enter pressed - switch to task
         local task_dir="${GWT_WORKTREE_ROOT}/${task_name}"
-        _worktree_info "タスクに切り替え中: $task_name"
-        cd "$task_dir"
+
+        # メタデータを読み込んでリポジトリ情報を取得
+        if [[ -f "${task_dir}/.workspace" ]]; then
+          source "${task_dir}/.workspace"
+
+          # 複数リポジトリがある場合は選択
+          if [[ ${#REPOS[@]} -gt 1 ]]; then
+            _worktree_info "リポジトリを選択してください..."
+            local repo=$(printf '%s\n' "${REPOS[@]}" | fzf \
+              --prompt="$task_name のリポジトリを選択: " \
+              --height=~${#REPOS[@]}+3 \
+              --border=rounded)
+
+            if [[ -n "$repo" ]]; then
+              local target_dir="${task_dir}/${repo}"
+              if [[ -d "$target_dir" ]]; then
+                _worktree_info "タスクに切り替え中: $task_name/$repo"
+                cd "$target_dir"
+              else
+                _worktree_error "リポジトリディレクトリが見つかりません: $target_dir"
+              fi
+            fi
+          elif [[ ${#REPOS[@]} -eq 1 ]]; then
+            # 単一リポジトリの場合は直接移動
+            local target_dir="${task_dir}/${REPOS[1]}"
+            if [[ -d "$target_dir" ]]; then
+              _worktree_info "タスクに切り替え中: $task_name/${REPOS[1]}"
+              cd "$target_dir"
+            else
+              _worktree_error "リポジトリディレクトリが見つかりません: $target_dir"
+            fi
+          else
+            # リポジトリ情報がない場合はタスクディレクトリに移動
+            _worktree_info "タスクに切り替え中: $task_name"
+            cd "$task_dir"
+          fi
+        else
+          # .workspace ファイルがない場合はタスクディレクトリに移動
+          _worktree_info "タスクに切り替え中: $task_name"
+          cd "$task_dir"
+        fi
         ;;
     esac
   fi
