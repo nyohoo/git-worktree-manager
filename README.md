@@ -256,6 +256,36 @@ Be careful when testing migrations.
 Technically yes, but watch out for port conflicts.
 Generally recommended to run only one server at a time.
 
+## 🚀 Raycast Integration
+
+Git Worktree Manager includes Raycast Script Commands for quick access to your tasks.
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| 📦 List Worktree Tasks | Show all active tasks with details |
+| 🎨 Open Task in Cursor | Open a task in Cursor editor |
+| 🖥️ Open Task in Terminal | Open a task directory in terminal |
+| 📋 Copy Task Path | Copy task path to clipboard |
+
+### Setup
+
+1. Install Raycast:
+   ```bash
+   brew install --cask raycast
+   ```
+
+2. Add Script Commands directory:
+   - Open Raycast → Extensions → "+" → Add Script Directory
+   - Select: `~/.config/gwm/raycast`
+
+3. Start using:
+   - Press `⌘ + Space` to open Raycast
+   - Type "list worktree" or "open task"
+
+See [raycast/README.md](raycast/README.md) for detailed setup and customization.
+
 ## 🤝 Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
