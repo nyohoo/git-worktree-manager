@@ -1427,8 +1427,8 @@ zpull() {
   echo "  Branch: ${branch_name}"
   echo ""
 
-  # タスク名はブランチ名と同じ
-  local task_name="$branch_name"
+  # タスク名はブランチ名から作成（/ を - に変換してパス安全に）
+  local task_name="${branch_name//\//-}"
   local task_dir="${GWT_WORKTREE_ROOT}/${task_name}"
 
   # 既存のタスクディレクトリをチェック
@@ -1465,11 +1465,25 @@ zpull() {
   local repo_worktree="${task_dir}/${repo}"
   _worktree_info "Worktree を作成中..."
 
-  # リモートブランチを追跡する worktree を作成
-  if ! git -C "$repo_main" worktree add "$repo_worktree" "origin/${branch_name}" 2>&1; then
-    _worktree_error "Worktree の作成に失敗しました"
-    rm -rf "$task_dir"
-    return 1
+  # ローカルブランチ名（リモートと同じ名前、または既に存在する場合は追跡）
+  local local_branch_name="$branch_name"
+
+  # ローカルブランチが既に存在するかチェック
+  if git -C "$repo_main" rev-parse --verify "$local_branch_name" >/dev/null 2>&1; then
+    # 既存のローカルブランチを使用
+    _worktree_info "既存のローカルブランチ '$local_branch_name' を使用します"
+    if ! git -C "$repo_main" worktree add "$repo_worktree" "$local_branch_name" 2>&1; then
+      _worktree_error "Worktree の作成に失敗しました"
+      rm -rf "$task_dir"
+      return 1
+    fi
+  else
+    # 新しいローカルブランチを作成してリモートを追跡
+    if ! git -C "$repo_main" worktree add -b "$local_branch_name" "$repo_worktree" "origin/${branch_name}" 2>&1; then
+      _worktree_error "Worktree の作成に失敗しました"
+      rm -rf "$task_dir"
+      return 1
+    fi
   fi
 
   # .workspace メタデータを作成
