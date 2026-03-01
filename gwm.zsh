@@ -344,6 +344,11 @@ EOF
       return 1
     fi
 
+    # mise.toml がある場合は自動的に trust
+    if [[ -f "$repo_worktree/mise.toml" ]] && command -v mise >/dev/null 2>&1; then
+      mise trust -C "$repo_worktree" 2>/dev/null || true
+    fi
+
     created_repos+=("$repo")
   done
 
@@ -1245,6 +1250,11 @@ zadd() {
       continue
     fi
 
+    # mise.toml がある場合は自動的に trust
+    if [[ -f "$repo_worktree/mise.toml" ]] && command -v mise >/dev/null 2>&1; then
+      mise trust -C "$repo_worktree" 2>/dev/null || true
+    fi
+
     added_repos+=("$repo")
   done
 
@@ -1684,6 +1694,11 @@ zpull() {
       rm -rf "$task_dir"
       return 1
     fi
+  fi
+
+  # mise.toml がある場合は自動的に trust
+  if [[ -f "$repo_worktree/mise.toml" ]] && command -v mise >/dev/null 2>&1; then
+    mise trust -C "$repo_worktree" 2>/dev/null || true
   fi
 
   # .workspace メタデータを作成
