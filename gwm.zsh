@@ -10,6 +10,7 @@
 #   zclean <task-name>                        - タスク終了（worktree削除）
 #   ztasks                                    - タスク一覧表示（fzf）
 #   zcursor [task-name]                       - Cursorで開く
+#   zprune                                    - ブランチとworktreeを整理
 #
 
 # ============================================================================
@@ -129,6 +130,9 @@ _zclaude_impl() {
   zclean <task>                     タスクを終了・削除
   ztasks                            タスク一覧（fzf）+ [Main]で戻る
 
+🧹 ブランチ整理:
+  zprune                            ブランチとworktreeを整理（対話的）
+
 🎨 エディタ:
   zcursor [task]                    Cursorで開く
 
@@ -167,6 +171,10 @@ _zclaude_impl() {
 
   # タスク終了
   zclean feature-new-api
+
+  # ブランチ整理（マージ済み・リモート削除済みを削除）
+  cd $GWT_REPOS_ROOT/my-backend
+  zprune
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1130,6 +1138,198 @@ zadd() {
   echo ""
   echo "📁 作成場所: $task_dir"
   echo "🔀 全リポジトリ: ${updated_repos[*]}"
+  echo ""
+}
+
+# ============================================================================
+# ブランチ整理コマンド
+# ============================================================================
+
+zprune() {
+  # 環境変数チェック
+  _check_environment || return 1
+
+  # カレントディレクトリがgitリポジトリかチェック
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    _worktree_error "カレントディレクトリがgitリポジトリではありません"
+    echo "リポジトリのルートディレクトリで実行してください"
+    return 1
+  fi
+
+  local repo_name=$(basename "$PWD")
+
+  _worktree_info "ブランチとworktreeを整理します（リポジトリ: $repo_name）"
+  echo ""
+
+  # 1. Prunable worktree のクリーンアップ
+  echo "🧹 Prunable worktree をクリーンアップ中..."
+  git worktree prune -v
+  echo ""
+
+  # 2. ベースブランチを検出
+  local base_branch
+  if git rev-parse --verify main >/dev/null 2>&1; then
+    base_branch="main"
+  elif git rev-parse --verify master >/dev/null 2>&1; then
+    base_branch="master"
+  else
+    base_branch="$GWT_BASE_BRANCH"
+  fi
+
+  # 3. 現在のブランチを取得（削除対象から除外）
+  local current_branch=$(git branch --show-current)
+
+  # 4. Worktree で使用中のブランチを取得（削除対象から除外）
+  local worktree_branches=()
+  while IFS= read -r line; do
+    # "branch [branch-name]" の形式から branch-name を抽出
+    if [[ "$line" =~ branch\ \[(.+)\] ]]; then
+      worktree_branches+=("${match[1]}")
+    fi
+  done < <(git worktree list --porcelain | grep "^branch")
+
+  # 5. マージ済みブランチを検出
+  local merged_branches=()
+  while IFS= read -r branch; do
+    # 空行・ベースブランチ・現在のブランチ・worktree使用中をスキップ
+    [[ -z "$branch" ]] && continue
+    [[ "$branch" == "$base_branch" ]] && continue
+    [[ "$branch" == "$current_branch" ]] && continue
+    [[ " ${worktree_branches[@]} " =~ " ${branch} " ]] && continue
+
+    merged_branches+=("$branch")
+  done < <(git branch --merged "$base_branch" | sed 's/^[* ]*//')
+
+  # 6. リモート追跡のないブランチを検出
+  local no_remote_branches=()
+  while IFS= read -r branch; do
+    [[ -z "$branch" ]] && continue
+    [[ "$branch" == "$base_branch" ]] && continue
+    [[ "$branch" == "$current_branch" ]] && continue
+    [[ " ${worktree_branches[@]} " =~ " ${branch} " ]] && continue
+
+    # リモート追跡ブランチが存在しないかチェック
+    if ! git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+      # マージ済みリストに既に含まれていなければ追加
+      if [[ ! " ${merged_branches[@]} " =~ " ${branch} " ]]; then
+        no_remote_branches+=("$branch")
+      fi
+    fi
+  done < <(git branch | sed 's/^[* ]*//')
+
+  # 7. 削除候補をfzfで表示
+  local candidates=()
+  local candidate_labels=()
+
+  # マージ済みブランチを追加
+  for branch in "${merged_branches[@]}"; do
+    candidates+=("$branch")
+    candidate_labels+=("✓ $branch (マージ済み)")
+  done
+
+  # リモート追跡なしブランチを追加
+  for branch in "${no_remote_branches[@]}"; do
+    candidates+=("$branch")
+    candidate_labels+=("⚠ $branch (リモート追跡なし)")
+  done
+
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    echo ""
+    _worktree_success "削除可能なブランチはありません 🎉"
+    echo ""
+    echo "現在のブランチ: $current_branch"
+    if [[ ${#worktree_branches[@]} -gt 0 ]]; then
+      echo "Worktree 使用中: ${worktree_branches[*]}"
+    fi
+    return 0
+  fi
+
+  echo "🔍 削除候補が見つかりました:"
+  echo "  マージ済み: ${#merged_branches[@]} 個"
+  echo "  リモート追跡なし: ${#no_remote_branches[@]} 個"
+  echo ""
+  echo "💡 fzf で削除するブランチを選択してください"
+  echo "   - Tab/Shift+Tab: 複数選択"
+  echo "   - Enter: 選択を確定"
+  echo "   - Esc: キャンセル"
+  echo ""
+
+  # fzf が利用可能かチェック
+  if ! command -v fzf >/dev/null 2>&1; then
+    _worktree_error "fzf がインストールされていません"
+    echo "インストール: brew install fzf （macOS）"
+    return 1
+  fi
+
+  # fzf で選択
+  local selected_labels=$(printf "%s\n" "${candidate_labels[@]}" | fzf --multi --height=80% --border --prompt="削除するブランチを選択 > " --preview="
+    branch=\$(echo {} | sed 's/^[✓⚠] //' | sed 's/ (.*//')
+    echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    echo \"ブランチ: \$branch\"
+    echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    echo \"\"
+    echo \"最新コミット:\"
+    git log -1 --oneline \$branch 2>/dev/null || echo '(情報なし)'
+    echo \"\"
+    echo \"コミット履歴 (最新5件):\"
+    git log --oneline -5 \$branch 2>/dev/null || echo '(情報なし)'
+  ")
+
+  if [[ -z "$selected_labels" ]]; then
+    echo ""
+    _worktree_info "キャンセルしました"
+    return 0
+  fi
+
+  # 選択されたブランチ名を抽出
+  local branches_to_delete=()
+  while IFS= read -r label; do
+    # "✓ branch-name (マージ済み)" -> "branch-name" を抽出
+    local branch=$(echo "$label" | sed 's/^[✓⚠] //' | sed 's/ (.*//')
+    branches_to_delete+=("$branch")
+  done <<< "$selected_labels"
+
+  if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
+    _worktree_info "削除するブランチが選択されませんでした"
+    return 0
+  fi
+
+  # 確認プロンプト
+  echo ""
+  echo "以下のブランチを削除します:"
+  for branch in "${branches_to_delete[@]}"; do
+    echo "  - $branch"
+  done
+  echo ""
+  read "confirm?本当に削除しますか？ (y/N): "
+
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    _worktree_info "キャンセルしました"
+    return 0
+  fi
+
+  # ブランチを削除
+  echo ""
+  local deleted_count=0
+  local failed_count=0
+
+  for branch in "${branches_to_delete[@]}"; do
+    echo -n "削除中: $branch ... "
+    if git branch -D "$branch" >/dev/null 2>&1; then
+      echo "✅"
+      ((deleted_count++))
+    else
+      echo "❌ 失敗"
+      ((failed_count++))
+    fi
+  done
+
+  echo ""
+  _worktree_success "削除完了: $deleted_count 個のブランチを削除しました"
+
+  if [[ $failed_count -gt 0 ]]; then
+    echo "⚠️  失敗: $failed_count 個のブランチを削除できませんでした"
+  fi
   echo ""
 }
 

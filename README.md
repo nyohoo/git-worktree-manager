@@ -124,6 +124,7 @@ zclean feature-api
 | `zclean <task>` | Clean up task and worktrees |
 | `ztasks` | List and select tasks (fzf) |
 | `zcursor [task]` | Open task in Cursor |
+| `zprune` | Clean up branches and worktrees interactively |
 
 ## 🔧 Configuration
 
