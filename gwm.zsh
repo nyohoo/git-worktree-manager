@@ -659,29 +659,77 @@ zclean() {
   echo "🌿 ブランチ '$BRANCH_NAME' のクリーンアップ"
   echo ""
 
+  local has_unpushed=false
   local has_unmerged=false
+
   for repo in "${REPOS[@]}"; do
     local repo_main="${GWT_REPOS_ROOT}/${repo}"
 
     # ブランチが存在するかチェック
-    if git -C "$repo_main" rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
-      # マージ済みかチェック
-      if git -C "$repo_main" branch --merged | grep -q "^[* ]*${BRANCH_NAME}$"; then
-        echo "  ✅ $repo: マージ済み（安全に削除可能）"
+    if ! git -C "$repo_main" rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
+      echo "  ℹ️  $repo: ブランチが見つかりません"
+      continue
+    fi
+
+    # リモートブランチの存在確認
+    local has_remote=false
+    if git -C "$repo_main" rev-parse --verify "origin/$BRANCH_NAME" >/dev/null 2>&1; then
+      has_remote=true
+    fi
+
+    # ローカルのみのコミット数をチェック
+    local unpushed_commits=0
+    if [[ "$has_remote" == true ]]; then
+      unpushed_commits=$(git -C "$repo_main" rev-list "origin/$BRANCH_NAME..$BRANCH_NAME" 2>/dev/null | wc -l | tr -d ' ')
+    else
+      # リモートブランチがない場合は全コミットが未プッシュ
+      unpushed_commits=$(git -C "$repo_main" rev-list "$BRANCH_NAME" --not --remotes 2>/dev/null | wc -l | tr -d ' ')
+    fi
+
+    # ベースブランチを取得
+    local base_branch
+    if git -C "$repo_main" rev-parse --verify main >/dev/null 2>&1; then
+      base_branch="main"
+    elif git -C "$repo_main" rev-parse --verify master >/dev/null 2>&1; then
+      base_branch="master"
+    else
+      base_branch="$GWT_BASE_BRANCH"
+    fi
+
+    # リモートの master/main にマージされているかチェック
+    local is_merged=false
+    if [[ "$has_remote" == true ]]; then
+      if git -C "$repo_main" branch -r --merged "origin/$base_branch" 2>/dev/null | grep -q "origin/$BRANCH_NAME"; then
+        is_merged=true
+      fi
+    fi
+
+    # 状態を表示
+    if [[ "$is_merged" == true ]]; then
+      echo "  ✅ $repo: リモートにマージ済み（安全に削除可能）"
+    elif [[ "$has_remote" == true ]]; then
+      if [[ "$unpushed_commits" -gt 0 ]]; then
+        echo "  ⚠️  $repo: 未プッシュのコミット ${unpushed_commits}件あり"
+        has_unpushed=true
       else
-        echo "  ⚠️  $repo: 未マージ（独自のコミットを含みます）"
-        has_unmerged=true
+        echo "  🔄 $repo: リモートにプッシュ済み（未マージだが安全）"
       fi
     else
-      echo "  ℹ️  $repo: ブランチが見つかりません"
+      echo "  ❌ $repo: リモートにプッシュされていません（${unpushed_commits}件のコミット）"
+      has_unpushed=true
+      has_unmerged=true
     fi
   done
 
   echo ""
 
-  if [[ "$has_unmerged" == true ]]; then
-    echo "⚠️  警告: いくつかのブランチにマージされていないコミットが含まれています。"
+  if [[ "$has_unpushed" == true ]]; then
+    echo "⚠️  警告: プッシュされていないコミットがあります。"
     echo "   削除すると、これらの変更は永久に失われます。"
+    echo ""
+  elif [[ "$has_unmerged" == false ]]; then
+    echo "💡 ヒント: 全てのコミットはリモートにプッシュ済みです。"
+    echo "   削除しても GitHub 上から復元できます。"
     echo ""
   fi
 
