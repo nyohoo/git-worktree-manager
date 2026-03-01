@@ -758,9 +758,10 @@ ztasks() {
           # 複数リポジトリがある場合は選択
           if [[ ${#REPOS[@]} -gt 1 ]]; then
             _worktree_info "リポジトリを選択してください..."
+            local height=$(( ${#REPOS[@]} + 3 ))
             local repo=$(printf '%s\n' "${REPOS[@]}" | fzf \
               --prompt="$task_name のリポジトリを選択: " \
-              --height=~${#REPOS[@]}+3 \
+              --height="~${height}" \
               --border=rounded)
 
             if [[ -n "$repo" ]]; then
