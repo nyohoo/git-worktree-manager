@@ -1248,10 +1248,15 @@ zprune() {
   echo "  マージ済み: ${#merged_branches[@]} 個"
   echo "  リモート追跡なし: ${#no_remote_branches[@]} 個"
   echo ""
-  echo "💡 fzf で削除するブランチを選択してください"
-  echo "   - Tab/Shift+Tab: 複数選択"
-  echo "   - Enter: 選択を確定"
-  echo "   - Esc: キャンセル"
+  echo "╭─────────────────────────────────────────────────────╮"
+  echo "│  💡 fzf で削除するブランチを選択してください        │"
+  echo "├─────────────────────────────────────────────────────┤"
+  echo "│  Tab / Shift+Tab  ：1つずつ選択・解除               │"
+  echo "│  Ctrl+A           ：全て選択                         │"
+  echo "│  Ctrl+D           ：全て解除                         │"
+  echo "│  Enter            ：選択を確定                       │"
+  echo "│  Esc              ：キャンセル                       │"
+  echo "╰─────────────────────────────────────────────────────╯"
   echo ""
 
   # fzf が利用可能かチェック
@@ -1262,7 +1267,16 @@ zprune() {
   fi
 
   # fzf で選択
-  local selected_labels=$(printf "%s\n" "${candidate_labels[@]}" | fzf --multi --height=80% --border --prompt="削除するブランチを選択 > " --preview="
+  local selected_labels=$(printf "%s\n" "${candidate_labels[@]}" | fzf \
+    --multi \
+    --height=80% \
+    --border=rounded \
+    --prompt="削除するブランチを選択 (複数可) > " \
+    --header="▲▼:移動 Tab:選択 Ctrl-A:全選択 Ctrl-D:全解除 Enter:確定" \
+    --bind="ctrl-a:select-all,ctrl-d:deselect-all,ctrl-/:toggle-preview" \
+    --preview-window="right:50%:wrap" \
+    --color="header:italic:cyan" \
+    --preview="
     branch=\$(echo {} | sed 's/^[✓⚠] //' | sed 's/ (.*//')
     echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     echo \"ブランチ: \$branch\"
@@ -1273,6 +1287,9 @@ zprune() {
     echo \"\"
     echo \"コミット履歴 (最新5件):\"
     git log --oneline -5 \$branch 2>/dev/null || echo '(情報なし)'
+    echo \"\"
+    echo \"変更されたファイル (最新コミット):\"
+    git diff-tree --no-commit-id --name-only -r \$branch 2>/dev/null | head -10 || echo '(情報なし)'
   ")
 
   if [[ -z "$selected_labels" ]]; then
