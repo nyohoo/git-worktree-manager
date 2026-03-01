@@ -528,4 +528,4 @@ MIT License
 
 Issue や Pull Request をお待ちしています！
 
-- GitHub: https://github.com/YOUR_ORG/git-worktree-manager
+- GitHub: https://github.com/nyohoo/git-worktree-manager

@@ -58,7 +58,7 @@ ztasks  # タスク一覧から切り替え
 ### Quick Install
 
 ```bash
-git clone https://github.com/YOUR_ORG/git-worktree-manager.git
+git clone https://github.com/nyohoo/git-worktree-manager.git
 cd git-worktree-manager
 ./install.sh
 ```
@@ -254,9 +254,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## 🔗 Links
 
-- GitHub: https://github.com/YOUR_ORG/git-worktree-manager
-- Issues: https://github.com/YOUR_ORG/git-worktree-manager/issues
-- Discussions: https://github.com/YOUR_ORG/git-worktree-manager/discussions
+- GitHub: https://github.com/nyohoo/git-worktree-manager
+- Issues: https://github.com/nyohoo/git-worktree-manager/issues
+- Discussions: https://github.com/nyohoo/git-worktree-manager/discussions
 
 ---
 

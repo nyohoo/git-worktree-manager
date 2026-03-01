@@ -7,7 +7,7 @@ Thank you for your interest in contributing! 🎉
 1. **Fork and clone the repository**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/git-worktree-manager.git
+git clone https://github.com/nyohoo/git-worktree-manager.git
 cd git-worktree-manager
 ```
 

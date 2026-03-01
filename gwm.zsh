@@ -173,7 +173,7 @@ _zclaude_impl() {
   GWT_GROUPS_FILE      グループ定義ファイル（デフォルト: ~/.config/gwm/groups.conf）
 
 📚 ドキュメント:
-  https://github.com/YOUR_ORG/git-worktree-manager
+  https://github.com/nyohoo/git-worktree-manager
 
 EOF
     return 0

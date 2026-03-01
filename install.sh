@@ -259,7 +259,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "📚 ドキュメント:"
 echo "  - README: ~/.config/gwm/README.md"
-echo "  - GitHub: https://github.com/YOUR_ORG/git-worktree-manager"
+echo "  - GitHub: https://github.com/nyohoo/git-worktree-manager"
 echo ""
 echo "💡 Tips:"
 echo "  - リポジトリグループを定義: ~/.config/gwm/groups.conf"
