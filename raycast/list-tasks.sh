@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env zsh
 
 # Required parameters:
 # @raycast.schemaVersion 1
@@ -16,7 +16,12 @@
 
 # Load environment variables
 if [[ -f "$HOME/.zshrc" ]]; then
-  source "$HOME/.zshrc"
+  source "$HOME/.zshrc" 2>/dev/null
+fi
+
+# Load gwm configuration if available
+if [[ -f "$HOME/.config/gwm/gwm.zsh" ]]; then
+  source "$HOME/.config/gwm/gwm.zsh" 2>/dev/null
 fi
 
 # Check if GWT_WORKTREE_ROOT is set

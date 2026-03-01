@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env zsh
 
 # Required parameters:
 # @raycast.schemaVersion 1
@@ -17,7 +17,7 @@
 
 # Load environment variables
 if [[ -f "$HOME/.zshrc" ]]; then
-  source "$HOME/.zshrc"
+  source "$HOME/.zshrc" 2>/dev/null
 fi
 
 task_name="$1"
