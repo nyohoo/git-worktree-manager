@@ -119,6 +119,7 @@ zclean feature-api
 | Command | Description |
 |---------|-------------|
 | `zclaude <task> [repos...]` | Create a new task with specified repositories |
+| `zpull <PR-URL>` | Create worktree from GitHub PR URL |
 | `zadd <repos...>` | Add repositories to current task |
 | `ztest <task>` | Switch main repositories to task branch |
 | `zclean <task>` | Clean up task and worktrees |
@@ -197,6 +198,22 @@ ztasks
 # Switch between tasks (no stash needed!)
 cd $GWT_WORKTREE_ROOT/task-a/backend  # Work on task A
 cd $GWT_WORKTREE_ROOT/task-b/frontend # Work on task B
+```
+
+### PR Review
+
+```bash
+# Create worktree from PR URL
+zpull https://github.com/heyinc/rsv-rails/pull/27158
+
+# Review the code
+cd $GWT_WORKTREE_ROOT/fix-bug-urgent/rsv-rails
+
+# Test the changes
+ztest fix-bug-urgent
+
+# Clean up after review
+zclean fix-bug-urgent
 ```
 
 ## 🏗️ Project Structure

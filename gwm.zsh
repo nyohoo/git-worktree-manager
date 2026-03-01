@@ -5,6 +5,7 @@
 #
 # 使い方:
 #   zclaude <task-name> <repo1> [repo2] ...  - タスク開始（worktree作成）
+#   zpull <PR-URL>                            - PR URLからworktree作成
 #   zclaude help                              - ヘルプ表示
 #   ztest <task-name>                         - 動作確認（メインでcheckout）
 #   zclean <task-name>                        - タスク終了（worktree削除）
@@ -124,6 +125,7 @@ _zclaude_impl() {
 
 📦 タスク管理:
   zclaude <task> [repo] [repo2...]  新しいタスクを開始
+  zpull <PR-URL>                    PR URL からworktreeを作成
   zadd <repo> [repo2...]            カレントタスクにリポジトリを追加
   znote <task> [memo]               タスクにメモを追加・表示
   ztest <task>                      メインリポジトリで動作確認
@@ -162,6 +164,9 @@ _zclaude_impl() {
 
   # メモを追加
   znote feature-new-api "API設計: https://notion.so/..."
+
+  # PR URL からレビュー用 worktree を作成
+  zpull https://github.com/heyinc/rsv-rails/pull/27158
 
   # タスク一覧から選択（[Main]でメインに戻る）
   ztasks
@@ -1347,6 +1352,182 @@ zprune() {
   if [[ $failed_count -gt 0 ]]; then
     echo "⚠️  失敗: $failed_count 個のブランチを削除できませんでした"
   fi
+  echo ""
+}
+
+# ============================================================================
+# PR URL から worktree 作成
+# ============================================================================
+
+zpull() {
+  # 環境変数チェック
+  _check_environment || return 1
+
+  # 引数チェック
+  if [[ $# -lt 1 ]]; then
+    _worktree_error "使い方: zpull <PR-URL>"
+    echo "例: zpull https://github.com/heyinc/rsv-rails/pull/27158"
+    echo ""
+    echo "GitHub PR の URL から自動的に worktree を作成します。"
+    return 1
+  fi
+
+  local pr_url="$1"
+
+  # gh コマンドの確認
+  if ! command -v gh >/dev/null 2>&1; then
+    _worktree_error "gh コマンドがインストールされていません"
+    echo "インストール: brew install gh （macOS）"
+    return 1
+  fi
+
+  # URL のパース (https://github.com/org/repo/pull/123)
+  if [[ ! "$pr_url" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    _worktree_error "無効な PR URL です"
+    echo "形式: https://github.com/org/repo/pull/123"
+    return 1
+  fi
+
+  local org="${match[1]}"
+  local repo="${match[2]}"
+  local pr_number="${match[3]}"
+
+  _worktree_info "PR 情報を取得中... (${org}/${repo}#${pr_number})"
+  echo ""
+
+  # リポジトリディレクトリを確認
+  local repo_main="${GWT_REPOS_ROOT}/${repo}"
+  if [[ ! -d "$repo_main" ]]; then
+    _worktree_error "リポジトリが見つかりません: $repo_main"
+    echo "先に git clone してください:"
+    echo "  cd $GWT_REPOS_ROOT"
+    echo "  git clone git@github.com:${org}/${repo}.git"
+    return 1
+  fi
+
+  # gh コマンドで PR 情報を取得
+  local pr_info=$(gh pr view "$pr_number" --repo "${org}/${repo}" --json headRefName,title,author 2>&1)
+  if [[ $? -ne 0 ]]; then
+    _worktree_error "PR 情報の取得に失敗しました"
+    echo "$pr_info"
+    return 1
+  fi
+
+  local branch_name=$(echo "$pr_info" | grep -o '"headRefName":"[^"]*"' | cut -d'"' -f4)
+  local pr_title=$(echo "$pr_info" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)
+  local pr_author=$(echo "$pr_info" | grep -o '"login":"[^"]*"' | cut -d'"' -f4)
+
+  if [[ -z "$branch_name" ]]; then
+    _worktree_error "ブランチ名の取得に失敗しました"
+    return 1
+  fi
+
+  _worktree_info "PR #${pr_number}: ${pr_title}"
+  echo "  Author: @${pr_author}"
+  echo "  Branch: ${branch_name}"
+  echo ""
+
+  # タスク名はブランチ名と同じ
+  local task_name="$branch_name"
+  local task_dir="${GWT_WORKTREE_ROOT}/${task_name}"
+
+  # 既存のタスクディレクトリをチェック
+  if [[ -d "$task_dir" ]]; then
+    _worktree_error "タスク '$task_name' は既に存在します: $task_dir"
+    echo ""
+    echo "以下のいずれかを選択してください:"
+    echo "  1. 既存のタスクを削除: zclean $task_name"
+    echo "  2. 既存のタスクを開く: ztasks"
+    return 1
+  fi
+
+  # ベースブランチを検出
+  local base_branch
+  if git -C "$repo_main" rev-parse --verify main >/dev/null 2>&1; then
+    base_branch="main"
+  elif git -C "$repo_main" rev-parse --verify master >/dev/null 2>&1; then
+    base_branch="master"
+  else
+    base_branch="$GWT_BASE_BRANCH"
+  fi
+
+  # リモートブランチを fetch
+  _worktree_info "リモートブランチを fetch 中..."
+  if ! git -C "$repo_main" fetch origin "$branch_name" 2>&1; then
+    _worktree_error "ブランチの fetch に失敗しました"
+    return 1
+  fi
+
+  # タスクディレクトリを作成
+  mkdir -p "$task_dir"
+
+  # Worktree を作成（リモートブランチを追跡）
+  local repo_worktree="${task_dir}/${repo}"
+  _worktree_info "Worktree を作成中..."
+
+  # リモートブランチを追跡する worktree を作成
+  if ! git -C "$repo_main" worktree add "$repo_worktree" "origin/${branch_name}" 2>&1; then
+    _worktree_error "Worktree の作成に失敗しました"
+    rm -rf "$task_dir"
+    return 1
+  fi
+
+  # .workspace メタデータを作成
+  {
+    echo "# Worktree metadata"
+    echo "TASK_NAME=\"${task_name}\""
+    echo "REPOS=(${repo})"
+    echo "BRANCH_NAME=\"${branch_name}\""
+    echo "CREATED_AT=\"$(date +%Y-%m-%d\ %H:%M:%S)\""
+    echo "BASE_BRANCH=\"${base_branch}\""
+    echo "NOTE=\"PR #${pr_number}: ${pr_title} by @${pr_author}\""
+    echo "LAST_ACCESSED=\"$(date +%Y-%m-%d\ %H:%M:%S)\""
+    echo "TOTAL_TIME=0"
+    echo "PR_URL=\"${pr_url}\""
+    echo "PR_NUMBER=\"${pr_number}\""
+  } > "${task_dir}/.workspace"
+
+  # .code-workspace ファイルを作成
+  local workspace_file="${task_dir}/${task_name}.code-workspace"
+  {
+    echo '{'
+    echo '  "folders": ['
+    echo "    { \"path\": \"./${repo}\" }"
+    echo '  ],'
+    echo '  "settings": {'
+    echo '    "workbench.colorCustomizations": {'
+    # タスク名のハッシュから色を生成
+    local hash_output
+    if command -v md5 >/dev/null 2>&1; then
+      hash_output=$(echo -n "$task_name" | md5 -q)
+    else
+      hash_output=$(echo -n "$task_name" | md5sum | cut -d' ' -f1)
+    fi
+    local color_hash=$((16#${hash_output:0:6}))
+    local hue=$(( color_hash % 360 ))
+    echo "      \"titleBar.activeBackground\": \"hsl(${hue}, 60%, 50%)\""
+    echo '    }'
+    echo '  }'
+    echo '}'
+  } > "$workspace_file"
+
+  echo ""
+  _worktree_success "Worktree を作成しました！"
+  echo ""
+  echo "📁 作成場所: $task_dir"
+  echo "🔀 リポジトリ: $repo"
+  echo "🌿 ブランチ: $branch_name"
+  echo "🔗 PR: ${pr_url}"
+  echo ""
+  echo "🚀 次のステップ:"
+  echo "  1. Worktree に移動:"
+  echo "     cd $repo_worktree"
+  echo ""
+  echo "  2. または Cursor で開く:"
+  echo "     zcursor $task_name"
+  echo ""
+  echo "  3. レビュー後、タスクを削除:"
+  echo "     zclean $task_name"
   echo ""
 }
 

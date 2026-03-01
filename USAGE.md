@@ -101,6 +101,46 @@ zclaude feature-api
 - `worktrees/<task-name>/backend/` - ここで編集
 - `worktrees/<task-name>/frontend/` - ここで編集
 
+### `zpull` - PR URL から worktree 作成
+
+GitHub の PR URL から自動的に worktree を作成します。PR レビューや他の人の作業を確認する際に便利です。
+
+```bash
+zpull <PR-URL>
+```
+
+**例:**
+
+```bash
+# PR URL から worktree を作成
+zpull https://github.com/heyinc/rsv-rails/pull/27158
+```
+
+**実行内容:**
+1. URL から組織名・リポジトリ名・PR番号を抽出
+2. `gh` コマンドで PR 情報を取得（ブランチ名、タイトル、作成者）
+3. リモートブランチを `git fetch`
+4. ブランチ名と同じ名前で worktree を作成
+5. `.workspace` にPR情報を記録
+6. Cursor ワークスペースファイルを生成
+
+**作業場所:**
+- `worktrees/<branch-name>/<repo>/` - PR のコードがここに展開される
+
+**メタデータ:**
+- `.workspace` ファイルに PR URL、PR番号、タイトル、作成者が記録される
+- `znote <branch-name>` でメモを追加可能
+
+**必要なツール:**
+- `gh` コマンド（GitHub CLI）
+- インストール: `brew install gh`
+- 初回は `gh auth login` で認証が必要
+
+**ユースケース:**
+- PR レビュー前にコードを手元で確認
+- 他のメンバーが作業中のブランチを pull してローカルでテスト
+- CI で失敗した PR を手元でデバッグ
+
 ### `zadd` - リポジトリ追加
 
 既存のタスクに新しいリポジトリを追加します。
@@ -326,7 +366,40 @@ cd $GWT_WORKTREE_ROOT/bugfix-login/auth-service
 # または ztasks で選択
 ```
 
-### 4. リポジトリグループを使った開発
+### 4. PR レビュー
+
+```bash
+# 1. PR URL から worktree を作成
+zpull https://github.com/heyinc/rsv-rails/pull/27158
+
+# 実行内容:
+# - PR 情報を取得（ブランチ名: fix-bug-urgent）
+# - リモートブランチを fetch
+# - worktrees/fix-bug-urgent/rsv-rails を作成
+# - .workspace に PR 情報を記録
+
+# 2. コードを確認
+cd $GWT_WORKTREE_ROOT/fix-bug-urgent/rsv-rails
+# ファイルを閲覧、変更を確認
+
+# 3. Cursor で開いて詳細確認
+zcursor fix-bug-urgent
+
+# 4. ローカルでテスト実行
+ztest fix-bug-urgent
+cd $GWT_REPOS_ROOT/rsv-rails
+bundle exec rspec
+
+# 5. GitHub で approve するか、コメントを追加
+gh pr review 27158 --approve
+# または
+gh pr comment 27158 --body "LGTM! ✅"
+
+# 6. レビュー完了後、worktree を削除
+zclean fix-bug-urgent
+```
+
+### 5. リポジトリグループを使った開発
 
 ```bash
 # グループ定義（~/.config/gwm/groups.conf）
