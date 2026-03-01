@@ -124,9 +124,10 @@ _zclaude_impl() {
 📦 タスク管理:
   zclaude <task> [repo] [repo2...]  新しいタスクを開始
   zadd <repo> [repo2...]            カレントタスクにリポジトリを追加
+  znote <task> [memo]               タスクにメモを追加・表示
   ztest <task>                      メインリポジトリで動作確認
   zclean <task>                     タスクを終了・削除
-  ztasks                            タスク一覧（fzf）
+  ztasks                            タスク一覧（fzf）+ [Main]で戻る
 
 🎨 エディタ:
   zcursor [task]                    Cursorで開く
@@ -155,7 +156,10 @@ _zclaude_impl() {
   # グループで一括追加
   zadd @backend @frontend
 
-  # タスク一覧から選択
+  # メモを追加
+  znote feature-new-api "API設計: https://notion.so/..."
+
+  # タスク一覧から選択（[Main]でメインに戻る）
   ztasks
 
   # メインで動作確認
