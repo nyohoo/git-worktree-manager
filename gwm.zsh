@@ -292,6 +292,27 @@ EOF
       base_branch="$GWT_BASE_BRANCH"
     fi
 
+    # 最新の状態を取得（git pull）
+    _worktree_info "$repo で最新の変更を取得中..."
+    local current_branch=$(git -C "$repo_main" branch --show-current 2>/dev/null)
+
+    # ベースブランチにいない場合は一時的に切り替え
+    if [[ "$current_branch" != "$base_branch" ]]; then
+      git -C "$repo_main" checkout "$base_branch" >/dev/null 2>&1
+    fi
+
+    # git pull を実行
+    if git -C "$repo_main" pull origin "$base_branch" 2>&1 | grep -v "Already up to date"; then
+      _worktree_success "$repo を最新化しました"
+    else
+      echo "⚠️  $repo の pull をスキップしました（既に最新 or エラー）"
+    fi
+
+    # 元のブランチに戻す（必要な場合）
+    if [[ "$current_branch" != "$base_branch" ]] && [[ -n "$current_branch" ]]; then
+      git -C "$repo_main" checkout "$current_branch" >/dev/null 2>&1
+    fi
+
     # worktree作成
     git -C "$repo_main" worktree add -b "$task_name" "$repo_worktree" "$base_branch" 2>&1
 
@@ -317,6 +338,9 @@ EOF
     echo "BRANCH_NAME=\"${task_name}\""
     echo "CREATED_AT=\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\""
     echo "BASE_BRANCH=\"${base_branch}\""
+    echo "NOTE=\"\""
+    echo "LAST_ACCESSED=\"\""
+    echo "TOTAL_TIME=0"
   } > "${task_dir}/.workspace"
 
   # Cursorワークスペースファイルを作成
@@ -635,8 +659,9 @@ ztasks() {
     return 1
   fi
 
-  # タスク一覧を取得
-  local tasks=()
+  # タスク一覧を取得（[Main] エントリを先頭に追加）
+  local tasks=("[Main]  📁 メイン作業場所  📂 $GWT_REPOS_ROOT")
+
   for task_dir in "$GWT_WORKTREE_ROOT"/*; do
     if [[ -d "$task_dir" && -f "${task_dir}/.workspace" ]]; then
       local task_name=$(basename "$task_dir")
@@ -650,17 +675,12 @@ ztasks() {
     fi
   done
 
-  if [[ ${#tasks[@]} -eq 0 ]]; then
-    _worktree_info "アクティブなタスクが見つかりません"
-    return 0
-  fi
-
   # fzfで選択
   local selected=$(printf '%s\n' "${tasks[@]}" | fzf \
     --prompt="タスク選択: " \
     --header="Enter: 切替 | 1: テスト | 2: 削除 | 3: Cursor" \
     --expect="1,2,3" \
-    --preview="echo {} | awk '{print \$1}' | xargs -I {} cat ${GWT_WORKTREE_ROOT}/{}/.workspace" \
+    --preview="echo {} | awk '{print \$1}' | xargs -I {} sh -c 'if [[ \"\$1\" == \"[Main]\" ]]; then echo \"📂 メインリポジトリ\"; echo \"\"; ls -d $GWT_REPOS_ROOT/*/.git 2>/dev/null | sed \"s|/.git||\" | xargs -n1 basename | sed \"s/^/  - /\"; else echo \"━━━━━━━━━━━━━━━━━━━━━━━\"; cat ${GWT_WORKTREE_ROOT}/\$1/.workspace 2>/dev/null | grep -v \"^#\"; source ${GWT_WORKTREE_ROOT}/\$1/.workspace 2>/dev/null && if [[ -n \"\$NOTE\" ]]; then echo \"\"; echo \"━━━━━━━━━━━━━━━━━━━━━━━\"; echo \"📝 メモ:\"; echo \"\$NOTE\"; fi; fi' _ {}" \
     --preview-window=right:40%)
 
   if [[ -n "$selected" ]]; then
@@ -668,6 +688,38 @@ ztasks() {
     local task_line=$(echo "$selected" | tail -1)
     local task_name=$(echo "$task_line" | awk '{print $1}')
 
+    # [Main] が選択された場合
+    if [[ "$task_name" == "[Main]" ]]; then
+      case "$key" in
+        1|2|3)
+          _worktree_info "[Main] では操作できません"
+          return 0
+          ;;
+        *)
+          # メインリポジトリに移動（リポジトリを選択）
+          local repos=()
+          for dir in "$GWT_REPOS_ROOT"/*; do
+            if [[ -d "$dir/.git" ]]; then
+              repos+=("$(basename "$dir")")
+            fi
+          done
+
+          if [[ ${#repos[@]} -eq 0 ]]; then
+            _worktree_info "メインリポジトリに移動: $GWT_REPOS_ROOT"
+            cd "$GWT_REPOS_ROOT"
+          else
+            local repo=$(printf '%s\n' "${repos[@]}" | fzf --prompt="リポジトリを選択: " --height=10)
+            if [[ -n "$repo" ]]; then
+              _worktree_info "メインリポジトリに移動: $repo"
+              cd "$GWT_REPOS_ROOT/$repo"
+            fi
+          fi
+          ;;
+      esac
+      return 0
+    fi
+
+    # 通常のタスク処理
     case "$key" in
       1)
         ztest "$task_name"
@@ -739,6 +791,98 @@ zcursor() {
 
   _worktree_info "タスク '$task_name' を Cursor で開いています..."
   cursor "$workspace_file"
+}
+
+# ============================================================================
+# メインコマンド: znote
+# ============================================================================
+
+znote() {
+  # 環境変数チェック
+  _check_environment || return 1
+
+  local task_name=""
+  local note_text=""
+
+  # 引数解析
+  if [[ $# -eq 0 ]]; then
+    # 引数なし: カレントディレクトリからタスクを検出
+    local current_dir="$PWD"
+    if [[ "$current_dir" == "$GWT_WORKTREE_ROOT"/* ]]; then
+      local relative_path="${current_dir#$GWT_WORKTREE_ROOT/}"
+      task_name="${relative_path%%/*}"
+    else
+      _worktree_error "使い方: znote <タスク名> [メモ内容]"
+      echo "または: タスクディレクトリ内で znote [メモ内容]"
+      return 1
+    fi
+  elif [[ $# -eq 1 ]]; then
+    # 引数1つ: タスク名 or メモ内容
+    local current_dir="$PWD"
+    if [[ "$current_dir" == "$GWT_WORKTREE_ROOT"/* ]]; then
+      # カレントディレクトリがタスク配下 → 引数はメモ内容
+      local relative_path="${current_dir#$GWT_WORKTREE_ROOT/}"
+      task_name="${relative_path%%/*}"
+      note_text="$1"
+    else
+      # カレントディレクトリがタスク配下でない → 引数はタスク名
+      task_name="$1"
+    fi
+  else
+    # 引数2つ以上: タスク名 + メモ内容
+    task_name="$1"
+    shift
+    note_text="$*"
+  fi
+
+  local task_dir="${GWT_WORKTREE_ROOT}/${task_name}"
+
+  if [[ ! -d "$task_dir" ]]; then
+    _worktree_error "タスク '$task_name' が見つかりません: $task_dir"
+    return 1
+  fi
+
+  if [[ ! -f "${task_dir}/.workspace" ]]; then
+    _worktree_error "タスクのメタデータが見つかりません: ${task_dir}/.workspace"
+    return 1
+  fi
+
+  # メタデータを読み込み
+  source "${task_dir}/.workspace"
+
+  # メモを表示または更新
+  if [[ -z "$note_text" ]]; then
+    # メモを表示
+    if [[ -n "$NOTE" ]]; then
+      echo "📝 メモ (タスク: $task_name)"
+      echo ""
+      echo "$NOTE"
+    else
+      echo "📝 メモが設定されていません (タスク: $task_name)"
+      echo ""
+      echo "メモを追加: znote $task_name \"メモ内容\""
+    fi
+  else
+    # メモを更新
+    NOTE="$note_text"
+
+    # .workspace ファイルを更新
+    {
+      echo "# Worktree metadata"
+      echo "TASK_NAME=\"${TASK_NAME}\""
+      echo "REPOS=(${REPOS[@]})"
+      echo "BRANCH_NAME=\"${BRANCH_NAME}\""
+      echo "CREATED_AT=\"${CREATED_AT}\""
+      echo "BASE_BRANCH=\"${BASE_BRANCH}\""
+      echo "NOTE=\"${NOTE}\""
+      echo "LAST_ACCESSED=\"${LAST_ACCESSED:-}\""
+      echo "TOTAL_TIME=${TOTAL_TIME:-0}"
+    } > "${task_dir}/.workspace"
+
+    _worktree_success "メモを更新しました (タスク: $task_name)"
+    echo ""
+    echo "📝 $NOTE"
+  fi
 }
 
 # ============================================================================
@@ -939,6 +1083,9 @@ zadd() {
     echo "BRANCH_NAME=\"${BRANCH_NAME}\""
     echo "CREATED_AT=\"${CREATED_AT}\""
     echo "BASE_BRANCH=\"${BASE_BRANCH}\""
+    echo "NOTE=\"${NOTE:-}\""
+    echo "LAST_ACCESSED=\"${LAST_ACCESSED:-}\""
+    echo "TOTAL_TIME=${TOTAL_TIME:-0}"
   } > "${task_dir}/.workspace"
 
   # .code-workspace ファイルを再生成
