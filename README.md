@@ -7,6 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Shell: zsh](https://img.shields.io/badge/Shell-zsh-blue.svg)](https://www.zsh.org/)
 
+> 📝 **このツールについて** — 作者（[@nyohoo](https://github.com/nyohoo)）の個人利用ツールです。作者本人が日常的に dogfood していますが、サポートはベストエフォートです。Issue / PR は歓迎しますが、返信が遅れる場合があります。動作環境は macOS + zsh + Warp を想定しています。
+
 ## ✨ Features
 
 - 🌳 **git worktree ベース**: 各タスクが独立したディレクトリで管理される
